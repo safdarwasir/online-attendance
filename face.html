@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UniFace | Smart Class Attendance System</title>
+    <!-- face-api.js CDN -->
+    <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <style>
+        :root {
+            --bg-dark: #090d16;
+            --card-bg: rgba(17, 25, 40, 0.85);
+            --border-color: rgba(0, 240, 255, 0.25);
+            --accent-cyan: #00f0ff;
+            --accent-amber: #ffb703;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --success: #10b981;
+            --danger: #ef4444;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+        }
+
+        body {
+            background: radial-gradient(circle at top right, #111c33, var(--bg-dark) 65%);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Navbar */
+        nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 5%;
+            background: rgba(9, 13, 22, 0.9);
+            border-bottom: 1px solid var(--border-color);
+            backdrop-filter: blur(12px);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .logo {
+            font-size: 1.4rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            color: var(--accent-cyan);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .logo span {
+            color: var(--accent-amber);
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .nav-btn {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.25s ease;
+        }
+
+        .nav-btn:hover, .nav-btn.active {
+            background: var(--accent-cyan);
+            color: #090d16;
+            box-shadow: 0 0 15px rgba(0, 240, 255, 0.4);
+        }
+
+        /* Main Container */
+        .container {
+            width: 92%;
+            max-width: 1100px;
+            margin: 2rem auto;
+            flex: 1;
+        }
+
+        /* Status Banner */
+        #modelStatus {
+            background: rgba(255, 183, 3, 0.12);
+            border: 1px solid var(--accent-amber);
+            color: var(--accent-amber);
+            padding: 12px 18px;
+            border-radius: 10px;
+            margin-bottom: 1.5rem;
+            text-align: center;
+            font-size: 0.95rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        #modelStatus.ready {
+            background: rgba(16, 185, 129, 0.12);
+            border-color: var(--success);
+            color: var(--success);
+        }
+
+        /* Views */
+        .view {
+            display: none;
+            animation: fadeIn 0.35s ease;
+        }
+
+        .view.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Card & Layout */
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            align-items: start;
+        }
+
+        @media (max-width: 768px) {
+            .grid-2 {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.5rem;
+            backdrop-filter: blur(16px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+        }
+
+        h2 {
+            font-size: 1.35rem;
+            margin-bottom: 0.5rem;
+            color: var(--accent-cyan);
+        }
+
+        p.subtitle {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-bottom: 1.25rem;
+        }
+
+        /* Camera Box */
+        .camera-wrapper {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 4 / 3;
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 2px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        video, canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        video {
+            transform: scaleX(-1); /* Mirror effect for natural selfie feel */
+        }
+
+        canvas {
+            transform: scaleX(-1);
+            pointer-events: none;
+        }
+
+        .scan-line {
+            position: absolute;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, var(--accent-cyan), transparent);
+            box-shadow: 0 0 12px var(--accent-cyan);
+            top: 0;
+            animation: scanAnim 2.5s infinite linear;
+            display: none;
+            z-index: 5;
+        }
+
+        @keyframes scanAnim {
+            0% { top: 5%; }
+            50% { top: 95%; }
+            100% { top: 5%; }
+        }
+
+        /* Forms & Inputs */
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        input, select {
+            width: 100%;
+            padding: 12px 14px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: rgba(9, 13, 22, 0.8);
+            color: var(--text-main);
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        input:focus, select:focus {
+            border-color: var(--accent-cyan);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 13px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            margin-top: 0.5rem;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-cyan), #0099ff);
+            color: #090d16;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            box-shadow: 0 0 20px rgba(0, 240, 255, 0.5);
+            transform: translateY(-1px);
+        }
+
+        .btn-amber {
+            background: linear-gradient(135deg, var(--accent-amber), #fb8500);
+            color: #090d16;
+        }
+
+        .btn-danger {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid var(--danger);
+            color: #fca5a5;
+            padding: 6px 12px;
+            font-size: 0.85rem;
+            width: auto;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Alert Messages */
+        .alert {
+            padding: 12px 15px;
+            border-radius: 10px;
+            margin-top: 1rem;
+            font-size: 0.92rem;
+            display: none;
+            line-height: 1.4;
+        }
+
+        .alert.success {
+            background: rgba(16, 185, 129, 0.15);
+            border: 1px solid var(--success);
+            color: #6ee7b7;
+            display: block;
+        }
+
+        .alert.error {
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid var(--danger);
+            color: #fca5a5;
+            display: block;
+        }
+
+        /* Admin Table */
+        .admin-controls {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 1.5rem;
+            align-items: flex-end;
+        }
+
+        .admin-controls > div {
+            flex: 1;
+            min-width: 180px;
+        }
+
+        .table-responsive {
+            width: 100%;
+            overflow-x: auto;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 0.9rem;
+        }
+
+        th, td {
+            padding: 12px 15px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            white-space: nowrap;
+        }
+
+        th {
+            background: rgba(0, 240, 255, 0.1);
+            color: var(--accent-cyan);
+            font-weight: 600;
+        }
+
+        tr:hover {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .badge {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .badge-high { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; }
+        .badge-low { background: rgba(239, 68, 68, 0.2); color: #fca5a5; }
+
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .stat-box {
+            background: rgba(9, 13, 22, 0.6);
+            border: 1px solid var(--border-color);
+            padding: 1rem;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .stat-box h3 {
+            font-size: 1.6rem;
+            color: var(--accent-amber);
+        }
+
+        .stat-box span {
+            font-size: 0.82rem;
+            color: var(--text-muted);
+        }
+
+        footer {
+            text-align: center;
+            padding: 1.2rem;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+            margin-top: 2rem;
+        }
+    </style>
+</head>
+<body>
+
+    <nav>
+        <div class="logo">Uni<span>Face</span> Attendance</div>
+        <div class="nav-links">
+            <button class="nav-btn active" onclick="switchView('attendanceView', this)">Daily Face Login</button>
+            <button class="nav-btn" onclick="switchView('registerView', this)">Student Register</button>
+            <button class="nav-btn" onclick="switchView('adminView', this)">Admin Panel</button>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div id="modelStatus">⏳ Loading AI Face Recognition Models... Please wait.</div>
+
+        <!-- VIEW 1: DAILY FACE ATTENDANCE (LOGIN) -->
+        <div id="attendanceView" class="view active">
+            <div class="grid-2">
+                <div class="card">
+                    <h2>Live Face Scanner</h2>
+                    <p class="subtitle">Look directly into the camera in good lighting to mark today's attendance.</p>
+                    <div class="camera-wrapper">
+                        <video id="attVideo" autoplay muted playsinline></video>
+                        <canvas id="attCanvas"></canvas>
+                        <div class="scan-line" id="attScanLine"></div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>Daily Attendance Check-In</h2>
+                    <p class="subtitle">Date: <strong id="todayDateDisplay" style="color: var(--accent-amber);"></strong></p>
+                    
+                    <button id="scanAttendanceBtn" class="btn btn-primary" onclick="markFaceAttendance()" disabled>
+                        Scan Face & Mark Attendance
+                    </button>
+
+                    <div id="attAlert" class="alert"></div>
+
+                    <div style="margin-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1rem;">
+                        <h3 style="font-size: 1rem; color: var(--text-main); margin-bottom: 8px;">Today's Recent Check-Ins</h3>
+                        <ul id="todayLogList" style="list-style: none; font-size: 0.88rem; color: var(--text-muted); max-height: 180px; overflow-y: auto;">
+                            <li>No attendance marked yet today.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- VIEW 2: STUDENT REGISTRATION -->
+        <div id="registerView" class="view">
+            <div class="grid-2">
+                <div class="card">
+                    <h2>Face Capture</h2>
+                    <p class="subtitle">Ensure only one face is visible in the frame during registration.</p>
+                    <div class="camera-wrapper">
+                        <video id="regVideo" autoplay muted playsinline></video>
+                        <canvas id="regCanvas"></canvas>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>New Student Registration</h2>
+                    <p class="subtitle">Register your Roll Number and Face ID once to enable daily check-ins.</p>
+                    
+                    <div class="form-group">
+                        <label for="regName">Full Name</label>
+                        <input type="text" id="regName" placeholder="e.g., Safdar Hashim">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="regRoll">University Roll Number</label>
+                        <input type="text" id="regRoll" placeholder="e.g., BSE-2026-01">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="regDept">Department / Semester</label>
+                        <input type="text" id="regDept" placeholder="e.g., BS Software Engineering - 1st">
+                    </div>
+
+                    <button id="registerBtn" class="btn btn-amber" onclick="registerStudent()" disabled>
+                        Capture Face & Register
+                    </button>
+
+                    <div id="regAlert" class="alert"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- VIEW 3: ADMIN PANEL -->
+        <div id="adminView" class="view">
+            <!-- Admin Login Box -->
+            <div id="adminLoginBox" class="card" style="max-width: 440px; margin: 2rem auto;">
+                <h2>Admin Login</h2>
+                <p class="subtitle">Authorized personnel only to view monthly attendance reports.</p>
+                
+                <div class="form-group">
+                    <label for="adminUser">Username</label>
+                    <input type="text" id="adminUser" placeholder="Enter admin username">
+                </div>
+
+                <div class="form-group">
+                    <label for="adminPass">Password</label>
+                    <input type="password" id="adminPass" placeholder="Enter password">
+                </div>
+
+                <button class="btn btn-primary" onclick="loginAdmin()">Login to Dashboard</button>
+                <div id="adminLoginAlert" class="alert"></div>
+            </div>
+
+            <!-- Admin Dashboard (Hidden until logged in) -->
+            <div id="adminDashboard" class="card" style="display: none;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 1rem;">
+                    <div>
+                        <h2>Monthly Attendance Report</h2>
+                        <p class="subtitle" style="margin-bottom: 0;">Monitor student attendance records by month.</p>
+                    </div>
+                    <button class="btn btn-danger" onclick="logoutAdmin()">Logout Admin</button>
+                </div>
+
+                <div class="stats-row">
+                    <div class="stat-box">
+                        <h3 id="statTotalStudents">0</h3>
+                        <span>Registered Students</span>
+                    </div>
+                    <div class="stat-box">
+                        <h3 id="statTodayPresent">0</h3>
+                        <span>Present Today</span>
+                    </div>
+                    <div class="stat-box">
+                        <h3 id="statMonthRecords">0</h3>
+                        <span>Monthly Check-Ins</span>
+                    </div>
+                </div>
+
+                <div class="admin-controls">
+                    <div>
+                        <label for="monthFilter">Select Month</label>
+                        <input type="month" id="monthFilter" onchange="renderAdminTable()">
+                    </div>
+                    <div>
+                        <label for="searchStudent">Search Name or Roll No</label>
+                        <input type="text" id="searchStudent" placeholder="Filter student..." oninput="renderAdminTable()">
+                    </div>
+                    <div style="flex: 0 0 auto;">
+                        <button class="btn btn-primary" style="margin-top: 0; padding: 12px 20px;" onclick="exportCSV()">Export CSV</button>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Roll No</th>
+                                <th>Student Name</th>
+                                <th>Department</th>
+                                <th>Days Present</th>
+                                <th>Dates Attended</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="adminTableBody">
+                            <!-- Dynamic rows -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        UniFace Biometric Attendance System &bull; Works on Mobile & Desktop Browsers
+    </footer>
+
+    <script>
+        // --- CONFIGURATION & STATE ---
+        const ADMIN_USER = "safdar";
+        const ADMIN_PASS = "bannu123";
+        const MODEL_URL = "https://justadudewhohacks.github.io/face-api.js/models";
+
+        let modelsLoaded = false;
+        let currentStream = null;
+        let activeViewId = "attendanceView";
+
+        // Storage keys
+        const STUDENTS_KEY = "uniface_students_v1";
+        const ATTENDANCE_KEY = "uniface_attendance_v1";
+
+        // --- INITIALIZATION ---
+        window.addEventListener("DOMContentLoaded", async () => {
+            // Set today's date & current month filter
+            const now = new Date();
+            const todayStr = getLocalDateString(now);
+            document.getElementById("todayDateDisplay").textContent = now.toDateString();
+            document.getElementById("monthFilter").value = todayStr.slice(0, 7); // YYYY-MM
+
+            updateTodayLogUI();
+            await loadFaceModels();
+            await startCamera("attVideo");
+        });
+
+        function getLocalDateString(date = new Date()) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        // --- LOAD AI MODELS ---
+        async function loadFaceModels() {
+            const statusEl = document.getElementById("modelStatus");
+            try {
+                await Promise.all([
+                    faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+                    faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+                    faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+                ]);
+                modelsLoaded = true;
+                statusEl.textContent = "✅ AI Face Recognition Ready";
+                statusEl.classList.add("ready");
+                document.getElementById("scanAttendanceBtn").disabled = false;
+                document.getElementById("registerBtn").disabled = false;
+            } catch (err) {
+                console.error(err);
+                statusEl.textContent = "❌ Failed to load AI models. Check your internet connection.";
+            }
+        }
+
+        // --- CAMERA MANAGEMENT (Mobile & Laptop Friendly) ---
+        async function startCamera(videoElementId) {
+            stopCamera();
+            const video = document.getElementById(videoElementId);
+            if (!video) return;
+
+            try {
+                // facingMode: "user" ensures front selfie camera opens on mobile phones
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+                    audio: false
+                });
+                currentStream = stream;
+                video.srcObject = stream;
+            } catch (err) {
+                alert("Camera access denied or unavailable. Please allow camera permissions and use HTTPS or localhost.");
+            }
+        }
+
+        function stopCamera() {
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+                currentStream = null;
+            }
+        }
+
+        // --- NAVIGATION ---
+        async function switchView(viewId, btnEl) {
+            document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+            document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
+
+            document.getElementById(viewId).classList.add("active");
+            if (btnEl) btnEl.classList.add("active");
+            activeViewId = viewId;
+
+            // Clear alerts
+            document.querySelectorAll(".alert").forEach(a => a.style.display = "none");
+
+            if (viewId === "attendanceView") {
+                await startCamera("attVideo");
+                updateTodayLogUI();
+            } else if (viewId === "registerView") {
+                await startCamera("regVideo");
+            } else {
+                stopCamera();
+                if (sessionStorage.getItem("uniface_admin_logged") === "true") {
+                    renderAdminTable();
+                }
+            }
+        }
+
+        // --- LOCAL STORAGE HELPERS ---
+        function getStudents() {
+            return JSON.parse(localStorage.getItem(STUDENTS_KEY) || "[]");
+        }
+
+        function saveStudents(students) {
+            localStorage.setItem(STUDENTS_KEY, JSON.stringify(students));
+        }
+
+        function getAttendance() {
+            return JSON.parse(localStorage.getItem(ATTENDANCE_KEY) || "[]");
+        }
+
+        function saveAttendance(records) {
+            localStorage.setItem(ATTENDANCE_KEY, JSON.stringify(records));
+        }
+
+        function showAlert(id, message, type) {
+            const el = document.getElementById(id);
+            el.textContent = message;
+            el.className = `alert ${type}`;
+            el.style.display = "block";
+        }
+
+        // --- STUDENT REGISTRATION ---
+        async function registerStudent() {
+            if (!modelsLoaded) return;
+
+            const name = document.getElementById("regName").value.trim();
+            const roll = document.getElementById("regRoll").value.trim().toUpperCase();
+            const dept = document.getElementById("regDept").value.trim();
+            const btn = document.getElementById("registerBtn");
+
+            if (!name || !roll || !dept) {
+                showAlert("regAlert", "Please fill in Name, Roll Number, and Department.", "error");
+                return;
+            }
+
+            const students = getStudents();
+            if (students.some(s => s.roll === roll)) {
+                showAlert("regAlert", `Roll Number ${roll} is already registered!`, "error");
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = "Scanning Face...";
+
+            try {
+                const video = document.getElementById("regVideo");
+                const detection = await faceapi
+                    .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
+                    .withFaceLandmarks()
+                    .withFaceDescriptor();
+
+                if (!detection) {
+                    showAlert("regAlert", "No face detected! Look clearly at the camera in bright light and try again.", "error");
+                    btn.disabled = false;
+                    btn.textContent = "Capture Face & Register";
+                    return;
+                }
+
+                // Draw detection box feedback
+                const canvas = document.getElementById("regCanvas");
+                const displaySize = { width: video.videoWidth, height: video.videoHeight };
+                faceapi.matchDimensions(canvas, displaySize);
+                const resized = faceapi.resizeResults(detection, displaySize);
+                canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
+                faceapi.draw.drawDetections(canvas, resized);
+
+                // Convert Float32Array descriptor to regular array for JSON storage
+                const descriptorArray = Array.from(detection.descriptor);
+
+                students.push({
+                    name,
+                    roll,
+                    dept,
+                    descriptor: descriptorArray,
+                    registeredAt: getLocalDateString()
+                });
+
+                saveStudents(students);
+                showAlert("regAlert", `✅ Success! ${name} (${roll}) registered. You can now use Daily Face Login.`, "success");
+
+                document.getElementById("regName").value = "";
+                document.getElementById("regRoll").value = "";
+                document.getElementById("regDept").value = "";
+            } catch (err) {
+                console.error(err);
+                showAlert("regAlert", "Error capturing face. Please try again.", "error");
+            }
+
+            btn.disabled = false;
+            btn.textContent = "Capture Face & Register";
+        }
+
+        // --- DAILY FACE ATTENDANCE ---
+        async function markFaceAttendance() {
+            if (!modelsLoaded) return;
+
+            const students = getStudents();
+            if (students.length === 0) {
+                showAlert("attAlert", "No students registered yet. Please go to 'Student Register' first.", "error");
+                return;
+            }
+
+            const btn = document.getElementById("scanAttendanceBtn");
+            const scanLine = document.getElementById("attScanLine");
+            btn.disabled = true;
+            btn.textContent = "Verifying Face...";
+            scanLine.style.display = "block";
+
+            try {
+                const video = document.getElementById("attVideo");
+                const detection = await faceapi
+                    .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
+                    .withFaceLandmarks()
+                    .withFaceDescriptor();
+
+                if (!detection) {
+                    showAlert("attAlert", "Face not detected. Position your face inside the camera frame.", "error");
+                    resetScanUI();
+                    return;
+                }
+
+                // Build LabeledFaceDescriptors from stored students
+                const labeledDescriptors = students.map(s => {
+                    return new faceapi.LabeledFaceDescriptors(
+                        s.roll,
+                        [new Float32Array(s.descriptor)]
+                    );
+                });
+
+                // 0.55 distance threshold balances accuracy and mobile camera lighting differences
+                const faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.55);
+                const bestMatch = faceMatcher.findBestMatch(detection.descriptor);
+
+                // Draw box on canvas
+                const canvas = document.getElementById("attCanvas");
+                const displaySize = { width: video.videoWidth, height: video.videoHeight };
+                faceapi.matchDimensions(canvas, displaySize);
+                const resized = faceapi.resizeResults(detection, displaySize);
+                canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
+                faceapi.draw.drawDetections(canvas, resized);
+
+                if (bestMatch.label === "unknown") {
+                    showAlert("attAlert", "❌ Face not recognized! Please register first or adjust lighting.", "error");
+                    resetScanUI();
+                    return;
+                }
+
+                const matchedStudent = students.find(s => s.roll === bestMatch.label);
+                const todayStr = getLocalDateString();
+                const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                const attendance = getAttendance();
+
+                // Prevent duplicate attendance on the same day
+                const alreadyMarked = attendance.some(a => a.roll === matchedStudent.roll && a.date === todayStr);
+                if (alreadyMarked) {
+                    showAlert("attAlert", `ℹ️ Welcome back, ${matchedStudent.name} (${matchedStudent.roll})! Your attendance is already marked for today.`, "success");
+                    resetScanUI();
+                    return;
+                }
+
+                attendance.push({
+                    roll: matchedStudent.roll,
+                    name: matchedStudent.name,
+                    dept: matchedStudent.dept,
+                    date: todayStr,
+                    time: timeStr
+                });
+
+                saveAttendance(attendance);
+                updateTodayLogUI();
+                showAlert("attAlert", `✅ Attendance Marked! Welcome, ${matchedStudent.name} (${matchedStudent.roll}) at ${timeStr}.`, "success");
+
+            } catch (err) {
+                console.error(err);
+                showAlert("attAlert", "Verification error occurred. Try again.", "error");
+            }
+
+            resetScanUI();
+        }
+
+        function resetScanUI() {
+            const btn = document.getElementById("scanAttendanceBtn");
+            const scanLine = document.getElementById("attScanLine");
+            btn.disabled = false;
+            btn.textContent = "Scan Face & Mark Attendance";
+            scanLine.style.display = "none";
+        }
+
+        function updateTodayLogUI() {
+            const todayStr = getLocalDateString();
+            const todayRecords = getAttendance().filter(a => a.date === todayStr).reverse();
+            const listEl = document.getElementById("todayLogList");
+
+            if (todayRecords.length === 0) {
+                listEl.innerHTML = "<li>No attendance marked yet today.</li>";
+                return;
+            }
+
+            listEl.innerHTML = todayRecords.map(r => `
+                <li style="padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.06); display: flex; justify-content: space-between;">
+                    <span><strong style="color: var(--text-main);">${r.name}</strong> (${r.roll})</span>
+                    <span style="color: var(--success);">${r.time}</span>
+                </li>
+            `).join("");
+        }
+
+        // --- ADMIN AUTH & DASHBOARD ---
+        function loginAdmin() {
+            const user = document.getElementById("adminUser").value.trim();
+            const pass = document.getElementById("adminPass").value.trim();
+
+            if (user === ADMIN_USER && pass === ADMIN_PASS) {
+                sessionStorage.setItem("uniface_admin_logged", "true");
+                document.getElementById("adminLoginBox").style.display = "none";
+                document.getElementById("adminDashboard").style.display = "block";
+                document.getElementById("adminUser").value = "";
+                document.getElementById("adminPass").value = "";
+                renderAdminTable();
+            } else {
+                showAlert("adminLoginAlert", "Invalid admin username or password.", "error");
+            }
+        }
+
+        function logoutAdmin() {
+            sessionStorage.removeItem("uniface_admin_logged");
+            document.getElementById("adminDashboard").style.display = "none";
+            document.getElementById("adminLoginBox").style.display = "block";
+        }
+
+        function renderAdminTable() {
+            const students = getStudents();
+            const attendance = getAttendance();
+            const selectedMonth = document.getElementById("monthFilter").value; // YYYY-MM
+            const searchQuery = document.getElementById("searchStudent").value.trim().toLowerCase();
+            const todayStr = getLocalDateString();
+
+            // Update Stats
+            const monthRecords = attendance.filter(a => a.date.startsWith(selectedMonth));
+            const todayRecords = attendance.filter(a => a.date === todayStr);
+
+            document.getElementById("statTotalStudents").textContent = students.length;
+            document.getElementById("statTodayPresent").textContent = todayRecords.length;
+            document.getElementById("statMonthRecords").textContent = monthRecords.length;
+
+            const tbody = document.getElementById("adminTableBody");
+            const filteredStudents = students.filter(s =>
+                s.name.toLowerCase().includes(searchQuery) ||
+                s.roll.toLowerCase().includes(searchQuery)
+            );
+
+            if (filteredStudents.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color: var(--text-muted);">No student records found.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = filteredStudents.map(student => {
+                const studentMonthAtt = monthRecords.filter(a => a.roll === student.roll);
+                const daysCount = studentMonthAtt.length;
+                const datesList = studentMonthAtt.map(a => a.date.slice(8, 10)).join(", ") || "None";
+                const badgeClass = daysCount > 0 ? "badge-high" : "badge-low";
+
+                return `
+                    <tr>
+                        <td><strong>${student.roll}</strong></td>
+                        <td>${student.name}</td>
+                        <td>${student.dept}</td>
+                        <td><span class="badge ${badgeClass}">${daysCount} Days</span></td>
+                        <td style="max-width: 240px; overflow: hidden; text-overflow: ellipsis;" title="${datesList}">
+                            ${datesList}
+                        </td>
+                        <td>
+                            <button class="btn btn-danger" onclick="deleteStudent('${student.roll}')">Remove</button>
+                        </td>
+                    </tr>
+                `;
+            }).join("");
+        }
+
+        function deleteStudent(roll) {
+            if (!confirm(`Delete student ${roll} and all their attendance records?`)) return;
+            const updatedStudents = getStudents().filter(s => s.roll !== roll);
+            const updatedAttendance = getAttendance().filter(a => a.roll !== roll);
+            saveStudents(updatedStudents);
+            saveAttendance(updatedAttendance);
+            renderAdminTable();
+        }
+
+        function exportCSV() {
+            const students = getStudents();
+            const attendance = getAttendance();
+            const selectedMonth = document.getElementById("monthFilter").value;
+            const monthRecords = attendance.filter(a => a.date.startsWith(selectedMonth));
+
+            let csv = "Roll No,Student Name,Department,Month,Days Present,Dates Attended\n";
+            students.forEach(s => {
+                const records = monthRecords.filter(a => a.roll === s.roll);
+                const dates = records.map(r => r.date).join(" | ");
+                csv += `"${s.roll}","${s.name}","${s.dept}","${selectedMonth}",${records.length},"${dates}"\n`;
+            });
+
+            const blob = new Blob([csv], { type: "text/csv" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `Attendance_${selectedMonth}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>
